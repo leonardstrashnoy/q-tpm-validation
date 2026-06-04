@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Large data (uncomment if you want to exclude)
+# trees/
+# *.hdf5
