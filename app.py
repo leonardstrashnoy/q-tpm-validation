@@ -229,4 +229,28 @@ with tab3:
     conn.close()
 
 st.sidebar.markdown("---")
+st.sidebar.subheader("📦 Datasets")
+
+# Current active dataset
+conn = sqlite3.connect(DB_PATH)
+current_count = conn.execute("SELECT COUNT(*) FROM worldlines").fetchone()[0]
+conn.close()
+
+st.sidebar.markdown(f"""
+**Current Active**
+- `qtpm_validation.db`  
+  Source: Synthetic (realistic distributions)  
+  Halos: **{current_count}**
+""")
+
+# Future / alternative datasets
+st.sidebar.markdown("""
+**Future / Potential Datasets**
+- `qtpm_tng_real.db` — IllustrisTNG (TNG100-1) — requires valid API key
+- `qtpm_cosmosim.db` — CosmoSim / Uchuu merger trees — planned
+- Bolshoi / MultiDark — planned
+- EAGLE / Horizon Run — planned
+- Full TNG300-1 + TNG50-1 — planned (larger volume / higher resolution)
+""")
+
 st.sidebar.caption("Q-TPM Synthetic Validation v0.2")

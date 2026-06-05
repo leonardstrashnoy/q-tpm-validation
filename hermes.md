@@ -18,21 +18,24 @@ Treat dark matter halo merger trees in IllustrisTNG as 4D worldlines. Map the si
 
 ## Files
 
-- `qtpm_tng_validator.py` — Full batch processor (IllustrisTNG → SQLite)
+- `qtpm_validator_lite.py` — Improved synthetic halo generator (400 halos, realistic distributions)
+- `app.py` — Streamlit dashboard (Overview, Pathway Analysis, Proposition Validation tabs)
 - `analyze_propositions.sql` — SQL queries testing all five formal propositions
-- `qtpm_validation.db` — Generated SQLite database (after running the validator)
+- `qtpm_validation.db` — Current database (400 synthetic halos)
+- `qtpm_tng_real.py` / `qtpm_cosmosim.py` — Real data fetchers (API key required for TNG)
 
 ## Quick Start
 
 ```bash
-python qtpm_tng_validator.py          # process trees/ folder into SQLite
-sqlite3 qtpm_validation.db < analyze_propositions.sql
+source .venv/bin/activate
+python qtpm_validator_lite.py          # Regenerate data (optional)
+streamlit run app.py                   # Launch interactive dashboard
 ```
 
 ## Next Steps
 
-1. Point `qtpm_tng_validator.py` at real TNG tree files.
-2. Run the five proposition queries and interpret results.
-3. Extend with additional TNG fields or visualization.
+1. Obtain valid IllustrisTNG API key and complete `qtpm_tng_real.py` integration.
+2. Run proposition queries via dashboard or SQL and interpret physical/ethical mappings.
+3. Add visualization of 4D worldline curvature and interference effects.
 
-**Status**: Core pipeline implemented. Ready for real data.
+**Status**: Synthetic validation pipeline + dashboard complete. Ready for real simulation data when API access is available.
