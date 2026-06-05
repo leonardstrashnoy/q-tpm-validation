@@ -4,22 +4,25 @@ Validation pipeline for Rodgers’ Quantum-Enhanced Throughput Model using cosmo
 
 ## Current Status (Synthetic Mode)
 
-- Improved synthetic halo generator with realistic distributions
-- Enhanced Streamlit dashboard with proposition validation
-- 400 synthetic halos in database
+- Improved synthetic halo generator with realistic distributions (400 halos)
+- Enhanced Streamlit dashboard with **three tabs**:
+  - Overview (KPIs, pathway activation, scatter plots)
+  - Pathway Analysis (correlations, mass-quartile distributions)
+  - Proposition Validation (all 5 formal propositions from analyze_propositions.sql)
+- Auto-regenerates missing database
 
 ## Quick Start
 
 ```bash
 source .venv/bin/activate
-python qtpm_validator_lite.py          # Regenerate data
+python qtpm_validator_lite.py          # Regenerate data (optional)
 streamlit run app.py                   # Launch dashboard
 ```
 
 ## Files
 
 - `qtpm_validator_lite.py` — Improved synthetic data generator
-- `app.py` — Enhanced interactive dashboard
+- `app.py` — Interactive Streamlit dashboard with proposition tests
 - `analyze_propositions.sql` — Proposition queries
 - `qtpm_validation.db` — Current database (400 halos)
 
