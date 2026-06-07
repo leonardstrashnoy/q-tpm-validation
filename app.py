@@ -95,7 +95,7 @@ def init_and_populate_db():
         st.success(f"Database ready with {len(data)} halos.")
 
     conn.close()
-    return conn
+    return None  # connection closed after init; data loaded separately via load_data()
 
 # Ensure DB exists and is populated (works both locally and on Streamlit Cloud)
 init_and_populate_db()
@@ -254,3 +254,26 @@ st.sidebar.markdown("""
 """)
 
 st.sidebar.caption("Q-TPM Synthetic Validation v0.2")
+# --- Help Section ---
+with st.sidebar.expander("❓ Help & Pathway Guide", expanded=False):
+    st.markdown("""
+    **Q-TPM Ethical Pathways** (mapped to halo properties)
+
+    - **Expedient** — Egoism: rapid recent growth + isolation  
+    - **Ruling-guide** — Deontology: strict merger rules  
+    - **Analytical** — Utilitarianism: high stellar conversion  
+    - **Revisionist** — Relativism: high curvature/variance  
+    - **Value-driven** — Virtue ethics: early formation + quiescence  
+    - **Global** — Ethics of care: dense environment + many mergers
+
+    **Propositions tested in Tab 3**
+    1. Non-commutativity (Revisionist effect)
+    2. Pathway interference
+    3. Value-driven stability
+    4. Global halos in dense environments
+    5. Analytical + Ruling-guide interaction
+
+    *Data is synthetic but uses realistic cosmological distributions.*
+    """)
+
+st.sidebar.caption("Q-TPM Synthetic Validation v0.3")
