@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
 Improved Q-TPM Synthetic Data Generator
-Creates more realistic halo distributions for testing.
+
+Creates realistic dark-matter halo distributions for testing the
+Quantum-Enhanced Throughput Model (Q-TPM) ethical pathway mappings.
 """
 
 import sqlite3
 import numpy as np
 from datetime import datetime
+from typing import List, Dict, Any, Callable
 
 DB_PATH = "qtpm_validation.db"
 
 # Shared pathway assignment rules (also used by app.py)
-PATHWAY_RULES = {
+PATHWAY_RULES: Dict[str, Callable] = {
     "expedient": lambda r, d: r > 0.22 and d < 1.2,
     "ruling_guide": lambda m: m <= 2,
     "analytical": lambda s: s > 0.035,
@@ -21,7 +24,8 @@ PATHWAY_RULES = {
 }
 
 
-def init_db():
+def init_db() -> sqlite3.Connection:
+    """Create the worldlines table if it does not exist."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
@@ -50,8 +54,13 @@ def init_db():
     return conn
 
 
-def generate_realistic_halos(n=400):
-    data = []
+def generate_realistic_halos(n: int = 400) -> List[Dict[str, Any]]:
+    """
+    Generate n synthetic halos with realistic cosmological distributions.
+
+    Returns a list of row dictionaries ready for database insertion.
+    """
+    data: List[Dict[str, Any]] = []
     np.random.seed(42)
 
     for i in range(n):
@@ -97,7 +106,8 @@ def generate_realistic_halos(n=400):
     return data
 
 
-def main():
+def main() -> None:
+    """Generate and persist 400 synthetic halos to the database."""
     conn = init_db()
     halos = generate_realistic_halos(400)
     print(f"Generating {len(halos)} realistic synthetic halos...")

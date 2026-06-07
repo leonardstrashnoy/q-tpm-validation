@@ -2,13 +2,25 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import plotly.express as px
-import os
 from datetime import datetime
 import numpy as np
+from pathlib import Path
 
 st.set_page_config(page_title="Q-TPM Dashboard", layout="wide")
 
 DB_PATH = "qtpm_validation.db"
+SQL_PATH = "analyze_propositions.sql"
+
+# Shared pathway assignment rules (kept in sync with qtpm_validator_lite.py)
+PATHWAY_RULES = {
+    "expedient": lambda r, d: r > 0.22 and d < 1.2,
+    "ruling_guide": lambda m: m <= 2,
+    "analytical": lambda s: s > 0.035,
+    "revisionist": lambda c: c > 0.085,
+    "value_driven": lambda f: f < 38,
+    "global": lambda m, d: m > 5 or d > 2.8,
+}
+
 
 def init_and_populate_db():
     """Create DB and generate synthetic data if missing or empty."""
@@ -38,7 +50,6 @@ def init_and_populate_db():
     """)
     conn.commit()
 
-    # Check if we need to populate
     count = c.execute("SELECT COUNT(*) FROM worldlines").fetchone()[0]
     if count == 0:
         st.info("Generating 400 synthetic halos for first run (this may take a moment)...")
@@ -57,12 +68,12 @@ def init_and_populate_db():
             path_curv = max(0.005, np.random.beta(2, 7) * 0.15)
 
             pathways = {
-                "expedient": int(recent_growth > 0.22 and local_density < 1.2),
-                "ruling_guide": int(major_mergers <= 2),
-                "analytical": int(star_frac > 0.035),
-                "revisionist": int(curvature > 0.085),
-                "value_driven": int(formation_snap < 38),
-                "global": int(major_mergers > 5 or local_density > 2.8),
+                "expedient": int(PATHWAY_RULES["expedient"](recent_growth, local_density)),
+                "ruling_guide": int(PATHWAY_RULES["ruling_guide"](major_mergers)),
+                "analytical": int(PATHWAY_RULES["analytical"](star_frac)),
+                "revisionist": int(PATHWAY_RULES["revisionist"](curvature)),
+                "value_driven": int(PATHWAY_RULES["value_driven"](formation_snap)),
+                "global": int(PATHWAY_RULES["global"](major_mergers, local_density)),
             }
 
             row = {
@@ -82,55 +93,59 @@ def init_and_populate_db():
             }
             data.append(row)
 
-        for row in data:
-            c.execute("""
-                INSERT OR REPLACE INTO worldlines VALUES
-                (:halo_id, :snapshot, :mass, :stellar_mass, :local_density,
-                 :recent_growth, :star_fraction, :formation_snap, :major_mergers,
-                 :curvature, :path_curvature,
-                 :expedient, :ruling_guide, :analytical, :revisionist,
-                 :value_driven, :global, :created_at)
-            """, row)
+        c.executemany("""
+            INSERT OR REPLACE INTO worldlines VALUES
+            (:halo_id, :snapshot, :mass, :stellar_mass, :local_density,
+             :recent_growth, :star_fraction, :formation_snap, :major_mergers,
+             :curvature, :path_curvature,
+             :expedient, :ruling_guide, :analytical, :revisionist,
+             :value_driven, :global, :created_at)
+        """, data)
         conn.commit()
         st.success(f"Database ready with {len(data)} halos.")
 
     conn.close()
-    return None  # connection closed after init; data loaded separately via load_data()
+    return None
 
-# Ensure DB exists and is populated (works both locally and on Streamlit Cloud)
-init_and_populate_db()
 
-@st.cache_data(ttl=3600)
 def load_data():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     df = pd.read_sql("SELECT * FROM worldlines", conn)
     conn.close()
     return df
 
+
+# Initialize
+init_and_populate_db()
 df = load_data()
 
 st.title("🧬 Q-TPM 4D Block Space Validation Dashboard")
 
-# Sidebar filters
+# Sidebar controls
 pathway_cols = ["expedient", "ruling_guide", "analytical", "revisionist", "value_driven", "global"]
 selected = st.sidebar.multiselect("Active Pathways", pathway_cols, default=pathway_cols)
+
+# Regenerate button
+if st.sidebar.button("🔄 Regenerate Synthetic Data"):
+    if Path(DB_PATH).exists():
+        Path(DB_PATH).unlink()
+    st.cache_data.clear()
+    st.rerun()
 
 filtered = df.copy()
 for p in selected:
     filtered = filtered[filtered[p] == 1]
 
-# Tabs for different views
+# Tabs
 tab1, tab2, tab3 = st.tabs(["Overview", "Pathway Analysis", "Proposition Validation"])
 
 with tab1:
-    # KPIs
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Halos", len(filtered))
     c2.metric("Avg Curvature", f"{filtered['curvature'].mean():.4f}")
     c3.metric("Revisionist %", f"{filtered['revisionist'].mean()*100:.1f}%")
     c4.metric("Interference %", f"{((filtered['expedient'] + filtered['global']) > 1).mean()*100:.1f}%")
 
-    # Charts
     st.subheader("Pathway Activation")
     activation = filtered[pathway_cols].mean().reset_index()
     activation.columns = ["Pathway", "Rate"]
@@ -140,6 +155,15 @@ with tab1:
     st.subheader("Curvature vs Density")
     fig2 = px.scatter(filtered, x="local_density", y="curvature", color="revisionist")
     st.plotly_chart(fig2, use_container_width=True)
+
+    # CSV download
+    csv = filtered.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="📥 Download filtered data (CSV)",
+        data=csv,
+        file_name="q_tpm_filtered_halos.csv",
+        mime="text/csv"
+    )
 
     st.dataframe(filtered[["halo_id", "mass", "curvature"] + pathway_cols], use_container_width=True)
 
@@ -156,70 +180,72 @@ with tab2:
         st.plotly_chart(fig_p, use_container_width=True)
 
 with tab3:
-    st.subheader("Formal Proposition Tests (from analyze_propositions.sql)")
+    st.subheader("Formal Proposition Tests")
+
+    # Load queries from SQL file when available
+    if Path(SQL_PATH).exists():
+        sql_content = Path(SQL_PATH).read_text()
+        queries = [q.strip() for q in sql_content.split(";") if q.strip() and not q.strip().startswith("--")]
+    else:
+        queries = []
 
     conn = sqlite3.connect(DB_PATH)
 
-    # Prop 1
+    # Proposition 1
     st.markdown("### Proposition 1: Non-commutativity (Revisionist effect on curvature)")
     prop1 = pd.read_sql("""
-        SELECT 
-            revisionist,
-            ROUND(AVG(curvature), 4) AS avg_curvature,
-            COUNT(*) AS n
+        SELECT revisionist,
+               ROUND(AVG(curvature), 4) AS avg_curvature,
+               COUNT(*) AS n
         FROM worldlines
         GROUP BY revisionist;
     """, conn)
     st.dataframe(prop1)
 
-    # Prop 2
+    # Proposition 2
     st.markdown("### Proposition 2: Pathway interference")
     prop2 = pd.read_sql("""
-        SELECT 
-            (expedient + global) AS interfering_pathways,
-            ROUND(AVG(curvature), 4) AS avg_curvature,
-            COUNT(*) AS n
+        SELECT (expedient + global) AS interfering_pathways,
+               ROUND(AVG(curvature), 4) AS avg_curvature,
+               COUNT(*) AS n
         FROM worldlines
         GROUP BY interfering_pathways
         ORDER BY interfering_pathways;
     """, conn)
     st.dataframe(prop2)
 
-    # Prop 3
+    # Proposition 3
     st.markdown("### Proposition 3: Value-driven stability")
     prop3 = pd.read_sql("""
-        SELECT 
-            value_driven,
-            ROUND(AVG(path_curvature), 5) AS stability,
-            ROUND(AVG(local_density), 2) AS avg_density,
-            COUNT(*) AS n
+        SELECT value_driven,
+               ROUND(AVG(path_curvature), 5) AS stability,
+               ROUND(AVG(local_density), 2) AS avg_density,
+               COUNT(*) AS n
         FROM worldlines
         GROUP BY value_driven;
     """, conn)
     st.dataframe(prop3)
 
-    # Prop 4
+    # Proposition 4
     st.markdown("### Proposition 4: Global halos in dense environments")
     prop4 = pd.read_sql("""
-        SELECT 
-            global,
-            ROUND(AVG(local_density), 2) AS mean_density,
-            ROUND(MAX(local_density), 2) AS max_density,
-            COUNT(*) AS n
+        SELECT global,
+               ROUND(AVG(local_density), 2) AS mean_density,
+               ROUND(MAX(local_density), 2) AS max_density,
+               COUNT(*) AS n
         FROM worldlines
         GROUP BY global;
     """, conn)
     st.dataframe(prop4)
 
-    # Prop 5
+    # Proposition 5
     st.markdown("### Proposition 5: Analytical + Ruling-guide interaction")
     prop5 = pd.read_sql("""
-        SELECT 
-            analytical,
-            ruling_guide,
-            COUNT(*) AS count,
-            ROUND(AVG(star_fraction), 3) AS avg_stellar_yield,
-            ROUND(AVG(curvature), 4) AS avg_curvature
+        SELECT analytical,
+               ruling_guide,
+               COUNT(*) AS count,
+               ROUND(AVG(star_fraction), 3) AS avg_stellar_yield,
+               ROUND(AVG(curvature), 4) AS avg_curvature
         FROM worldlines
         GROUP BY analytical, ruling_guide
         ORDER BY count DESC;
@@ -228,10 +254,10 @@ with tab3:
 
     conn.close()
 
+# Sidebar
 st.sidebar.markdown("---")
 st.sidebar.subheader("📦 Datasets")
 
-# Current active dataset
 conn = sqlite3.connect(DB_PATH)
 current_count = conn.execute("SELECT COUNT(*) FROM worldlines").fetchone()[0]
 conn.close()
@@ -243,18 +269,13 @@ st.sidebar.markdown(f"""
   Halos: **{current_count}**
 """)
 
-# Future / alternative datasets
 st.sidebar.markdown("""
 **Future / Potential Datasets**
-- `qtpm_tng_real.db` — IllustrisTNG (TNG100-1) — requires valid API key
-- `qtpm_cosmosim.db` — CosmoSim / Uchuu merger trees — planned
+- `qtpm_tng_real.db` — IllustrisTNG (TNG100-1)
+- `qtpm_cosmosim.db` — CosmoSim / Uchuu
 - Bolshoi / MultiDark — planned
-- EAGLE / Horizon Run — planned
-- Full TNG300-1 + TNG50-1 — planned (larger volume / higher resolution)
 """)
 
-st.sidebar.caption("Q-TPM Synthetic Validation v0.2")
-# --- Help Section ---
 with st.sidebar.expander("❓ Help & Pathway Guide", expanded=False):
     st.markdown("""
     **Q-TPM Ethical Pathways** (mapped to halo properties)

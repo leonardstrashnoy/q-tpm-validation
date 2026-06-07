@@ -1,8 +1,4 @@
-numpy
-h5py
-scipy
-pandas
-matplotlib
-seaborn
-streamlit
-plotly
+numpy==2.1.3
+pandas==2.2.3
+plotly==5.24.1
+streamlit==1.45.0
