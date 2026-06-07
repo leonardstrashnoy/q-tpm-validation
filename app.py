@@ -129,7 +129,6 @@ selected = st.sidebar.multiselect("Active Pathways", pathway_cols, default=pathw
 if st.sidebar.button("🔄 Regenerate Synthetic Data"):
     if Path(DB_PATH).exists():
         Path(DB_PATH).unlink()
-    st.cache_data.clear()
     st.rerun()
 
 filtered = df.copy()
@@ -181,13 +180,6 @@ with tab2:
 
 with tab3:
     st.subheader("Formal Proposition Tests")
-
-    # Load queries from SQL file when available
-    if Path(SQL_PATH).exists():
-        sql_content = Path(SQL_PATH).read_text()
-        queries = [q.strip() for q in sql_content.split(";") if q.strip() and not q.strip().startswith("--")]
-    else:
-        queries = []
 
     conn = sqlite3.connect(DB_PATH)
 
