@@ -14,3 +14,9 @@ __pycache__/
 # Large data (uncomment if you want to exclude)
 # trees/
 # *.hdf5
+# Simulation data directories
+abacus_data/
+bolshoi_data/
+camels_data/
+cosmosim_data/
+hf_data/
