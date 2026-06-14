@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Q-TPM 4D Block Space Validation Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<style>
+  :root {
+    --bg: #0e1117;
+    --bg2: #161a23;
+    --bg3: #1c212c;
+    --fg: #fafafa;
+    --muted: #9aa4b2;
+    --accent: #7c9cff;
+    --border: #2a303c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+  }
+  a { color: var(--accent); }
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 300px; flex: 0 0 300px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    padding: 20px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .main { flex: 1; padding: 24px 32px; max-width: 1400px; }
+  h1 { font-size: 28px; margin: 0 0 18px; }
+  h2 { font-size: 20px; margin: 26px 0 10px; }
+  h3 { font-size: 16px; margin: 18px 0 6px; }
+  .sidebar h3 { margin-top: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  code { background: var(--bg3); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+
+  .checks label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
+  .checks input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .tab-btn {
+    background: none; border: none; color: var(--muted);
+    padding: 10px 18px; cursor: pointer; font-size: 15px;
+    border-bottom: 2px solid transparent;
+  }
+  .tab-btn.active { color: var(--fg); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 8px; }
+  .metric { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .metric .label { color: var(--muted); font-size: 13px; }
+  .metric .value { font-size: 26px; font-weight: 600; margin-top: 4px; }
+
+  .plot { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; margin: 8px 0 4px; }
+
+  button.action {
+    background: var(--accent); color: #0e1117; border: none; border-radius: 8px;
+    padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; margin: 10px 0;
+  }
+  button.ghost {
+    background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 16px; font-size: 14px; cursor: pointer; width: 100%;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--bg); }
+  .table-wrap { max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+  details { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 14px; }
+  summary { cursor: pointer; }
+  .sql { background: var(--bg3); border-radius: 6px; padding: 8px 10px; font-size: 12px; white-space: pre; overflow-x: auto; color: var(--muted); margin: 6px 0 14px; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <h3>Active Pathways</h3>
+    <p class="muted" style="margin-top:-6px;">Check to keep only halos in <i>all</i> selected pathways. None checked = all halos.</p>
+    <div class="checks" id="pathwayChecks"></div>
+    <button class="ghost" id="resetBtn" style="margin-top:10px;">Reset filters</button>
+
+    <hr />
+    <h3>📦 Datasets</h3>
+    <p class="muted"><b>Current Active</b><br />
+      <code>qtpm_validation.db</code><br />
+      Source: Synthetic (realistic distributions)<br />
+      Halos: <b id="haloCount">—</b></p>
+    <p class="muted"><b>Future / Potential</b><br />
+      <code>qtpm_tng_real.db</code> — IllustrisTNG (TNG100-1)<br />
+      <code>qtpm_cosmosim.db</code> — CosmoSim / Uchuu<br />
+      Bolshoi / MultiDark — planned</p>
+
+    <hr />
+    <details>
+      <summary>❓ Help &amp; Pathway Guide</summary>
+      <p class="muted"><b>Q-TPM Ethical Pathways</b> (mapped to halo properties)</p>
+      <ul class="muted" style="padding-left:18px;">
+        <li><b>Expedient</b> — Egoism: rapid recent growth + isolation</li>
+        <li><b>Ruling-guide</b> — Deontology: strict merger rules</li>
+        <li><b>Analytical</b> — Utilitarianism: high stellar conversion</li>
+        <li><b>Revisionist</b> — Relativism: high curvature/variance</li>
+        <li><b>Value-driven</b> — Virtue ethics: early formation + quiescence</li>
+        <li><b>Global</b> — Ethics of care: dense environment + many mergers</li>
+      </ul>
+      <p class="muted"><i>Data is synthetic but uses realistic cosmological distributions.</i></p>
+    </details>
+    <p class="muted" style="margin-top:18px;">Q-TPM Synthetic Validation v0.3 · static</p>
+  </aside>
+
+  <main class="main">
+    <h1>🧬 Q-TPM 4D Block Space Validation Dashboard</h1>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="pathway">Pathway Analysis</button>
+      <button class="tab-btn" data-tab="props">Proposition Validation</button>
+    </div>
+
+    <!-- Overview -->
+    <section class="tab-panel active" id="tab-overview">
+      <div class="metrics">
+        <div class="metric"><div class="label">Halos</div><div class="value" id="m-halos">—</div></div>
+        <div class="metric"><div class="label">Avg Curvature</div><div class="value" id="m-curv">—</div></div>
+        <div class="metric"><div class="label">Revisionist %</div><div class="value" id="m-rev">—</div></div>
+        <div class="metric"><div class="label">Interference %</div><div class="value" id="m-intf">—</div></div>
+      </div>
+      <h2>Pathway Activation</h2>
+      <div class="plot" id="plot-activation"></div>
+      <h2>Curvature vs Density</h2>
+      <div class="plot" id="plot-scatter"></div>
+      <button class="action" id="csvBtn">📥 Download filtered data (CSV)</button>
+      <div class="table-wrap"><table id="overviewTable"></table></div>
+    </section>
+
+    <!-- Pathway Analysis -->
+    <section class="tab-panel" id="tab-pathway">
+      <h2>Pathway Correlations</h2>
+      <div class="plot" id="plot-corr"></div>
+      <h2>Pathway Distribution by Mass Quartile</h2>
+      <div id="boxPlots"></div>
+    </section>
+
+    <!-- Propositions -->
+    <section class="tab-panel" id="tab-props">
+      <h2>Formal Proposition Tests</h2>
+      <p class="muted">Run in-browser via <a href="https://sql.js.org" target="_blank">sql.js</a> (SQLite-WASM) against all
+        <span id="propN">400</span> halos — the same queries as <code>analyze_propositions.sql</code>.</p>
+      <div id="propsContainer"><p class="muted">Loading SQLite engine…</p></div>
+    </section>
+  </main>
+</div>
+
+<script>
+const DARK = {
+  paper_bgcolor: "#161a23", plot_bgcolor: "#161a23",
+  font: { color: "#fafafa" }, margin: { t: 30, r: 20, b: 50, l: 60 },
+};
+const CONF = { displayModeBar: false, responsive: true };
+
+let DATA = null;          // full payload
+let PATHWAYS = [];        // pathway column names
+let selected = new Set(); // active pathway filters
+
+// ---------- helpers ----------
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+const round = (x, n) => Number(x.toFixed(n));
+
+function getFiltered() {
+  return DATA.halos.filter(h => [...selected].every(p => h[p] === 1));
+}
+
+function pearson(x, y) {
+  const n = x.length, mx = mean(x), my = mean(y);
+  let num = 0, dx = 0, dy = 0;
+  for (let i = 0; i < n; i++) {
+    const a = x[i] - mx, b = y[i] - my;
+    num += a * b; dx += a * a; dy += b * b;
+  }
+  const den = Math.sqrt(dx * dy);
+  return den === 0 ? 0 : num / den;
+}
+
+function quartileLabels(values) {
+  // pandas qcut into 4 equal-frequency bins -> Q1..Q4
+  const sorted = [...values].sort((a, b) => a - b);
+  const q = p => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+  const b1 = q(0.25), b2 = q(0.50), b3 = q(0.75);
+  return v => v <= b1 ? "Q1" : v <= b2 ? "Q2" : v <= b3 ? "Q3" : "Q4";
+}
+
+// ---------- rendering ----------
+const EMPTY_MSG = "No halos match the current filter — these pathways don't co-occur. Uncheck some Active Pathways to widen the set.";
+
+function emptyNote(divId) {
+  Plotly.purge(divId);
+  document.getElementById(divId).innerHTML =
+    `<p class="muted" style="padding:28px;text-align:center;">${EMPTY_MSG}</p>`;
+}
+
+// Remove a lingering empty-state note before (re)drawing a Plotly chart,
+// otherwise Plotly re-inits the div but leaves the injected <p> in place.
+function clearNote(divId) {
+  const el = document.getElementById(divId);
+  if (el.querySelector("p")) el.innerHTML = "";
+}
+
+function renderMetrics(rows) {
+  const dash = "—";
+  document.getElementById("m-halos").textContent = rows.length;
+  document.getElementById("m-curv").textContent = rows.length ? round(mean(rows.map(r => r.curvature)), 4) : dash;
+  document.getElementById("m-rev").textContent = rows.length ? round(mean(rows.map(r => r.revisionist)) * 100, 1) + "%" : dash;
+  const intf = mean(rows.map(r => (r.expedient + r.global) > 1 ? 1 : 0)) * 100;
+  document.getElementById("m-intf").textContent = rows.length ? round(intf, 1) + "%" : dash;
+}
+
+function renderActivation(rows) {
+  if (!rows.length) return emptyNote("plot-activation");
+  clearNote("plot-activation");
+  const rates = PATHWAYS.map(p => mean(rows.map(r => r[p])));
+  Plotly.react("plot-activation", [{
+    type: "bar", x: PATHWAYS, y: rates, marker: { color: "#7c9cff" },
+  }], { ...DARK, height: 340, yaxis: { title: "Rate" } }, CONF);
+}
+
+function renderScatter(rows) {
+  if (!rows.length) return emptyNote("plot-scatter");
+  clearNote("plot-scatter");
+  Plotly.react("plot-scatter", [{
+    type: "scattergl", mode: "markers",
+    x: rows.map(r => r.local_density), y: rows.map(r => r.curvature),
+    marker: {
+      color: rows.map(r => r.revisionist), colorscale: "Viridis",
+      showscale: true, colorbar: { title: "revisionist" }, size: 7, opacity: 0.8,
+    },
+    text: rows.map(r => "halo " + r.halo_id),
+  }], { ...DARK, height: 420, xaxis: { title: "local_density" }, yaxis: { title: "curvature" } }, CONF);
+}
+
+function renderTable(rows) {
+  const cols = ["halo_id", "mass", "curvature", ...PATHWAYS];
+  const head = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
+  const body = "<tbody>" + rows.map(r =>
+    "<tr>" + cols.map(c => `<td>${r[c]}</td>`).join("") + "</tr>"
+  ).join("") + "</tbody>";
+  document.getElementById("overviewTable").innerHTML = head + body;
+}
+
+function renderCorr(rows) {
+  if (!rows.length) return emptyNote("plot-corr");
+  clearNote("plot-corr");
+  const cols = PATHWAYS;
+  const series = cols.map(c => rows.map(r => r[c]));
+  const z = cols.map((_, i) => cols.map((__, j) => round(pearson(series[i], series[j]), 2)));
+  Plotly.react("plot-corr", [{
+    type: "heatmap", x: cols, y: cols, z, zmin: -1, zmax: 1, colorscale: "RdBu",
+    reversescale: true, text: z, texttemplate: "%{text}", showscale: true,
+  }], { ...DARK, height: 420 }, CONF);
+}
+
+function renderBoxes(rows) {
+  const container = document.getElementById("boxPlots");
+  container.innerHTML = "";
+  if (!rows.length) { container.innerHTML = "<p class='muted'>No halos match the current filter.</p>"; return; }
+  const qlab = quartileLabels(rows.map(r => r.mass));
+  const order = ["Q1", "Q2", "Q3", "Q4"];
+  PATHWAYS.forEach(p => {
+    const div = document.createElement("div");
+    div.className = "plot"; div.style.height = "320px";
+    container.appendChild(div);
+    const traces = [0, 1].map(val => ({
+      type: "box", name: p + "=" + val,
+      x: rows.filter(r => r[p] === val).map(r => qlab(r.mass)),
+      y: rows.filter(r => r[p] === val).map(r => r.curvature),
+    }));
+    Plotly.newPlot(div, traces, {
+      ...DARK, height: 320, boxmode: "group", title: { text: p, font: { size: 14 } },
+      xaxis: { categoryorder: "array", categoryarray: order, title: "mass quartile" },
+      yaxis: { title: "curvature" },
+    }, CONF);
+  });
+}
+
+function downloadCSV(rows) {
+  const cols = Object.keys(rows[0] || DATA.halos[0]);
+  const lines = [cols.join(",")].concat(
+    rows.map(r => cols.map(c => r[c]).join(","))
+  );
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "q_tpm_filtered_halos.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function refresh() {
+  const rows = getFiltered();
+  renderMetrics(rows);
+  renderActivation(rows);
+  renderScatter(rows);
+  renderTable(rows);
+  renderCorr(rows);
+  renderBoxes(rows);
+}
+
+// ---------- propositions via sql.js ----------
+const PROP_QUERIES = [
+  { title: "Proposition 1: Non-commutativity (Revisionist effect on curvature)", sql:
+`SELECT revisionist,
+       ROUND(AVG(curvature), 4) AS avg_curvature,
+       COUNT(*) AS n
+FROM worldlines
+GROUP BY revisionist;` },
+  { title: "Proposition 2: Pathway interference", sql:
+`SELECT (expedient + global) AS interfering_pathways,
+       ROUND(AVG(curvature), 4) AS avg_curvature,
+       COUNT(*) AS n
+FROM worldlines
+GROUP BY interfering_pathways
+ORDER BY interfering_pathways;` },
+  { title: "Proposition 3: Value-driven stability", sql:
+`SELECT value_driven,
+       ROUND(AVG(path_curvature), 5) AS stability,
+       ROUND(AVG(local_density), 2) AS avg_density,
+       COUNT(*) AS n
+FROM worldlines
+GROUP BY value_driven;` },
+  { title: "Proposition 4: Global halos in dense environments", sql:
+`SELECT global,
+       ROUND(AVG(local_density), 2) AS mean_density,
+       ROUND(MAX(local_density), 2) AS max_density,
+       COUNT(*) AS n
+FROM worldlines
+GROUP BY global;` },
+  { title: "Proposition 5: Analytical + Ruling-guide interaction", sql:
+`SELECT analytical,
+       ruling_guide,
+       COUNT(*) AS count,
+       ROUND(AVG(star_fraction), 3) AS avg_stellar_yield,
+       ROUND(AVG(curvature), 4) AS avg_curvature
+FROM worldlines
+GROUP BY analytical, ruling_guide
+ORDER BY count DESC;` },
+];
+
+function resultTable(res) {
+  if (!res || !res.length) return "<p class='muted'>No rows.</p>";
+  const { columns, values } = res[0];
+  const head = "<thead><tr>" + columns.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
+  const body = "<tbody>" + values.map(row =>
+    "<tr>" + row.map(v => `<td>${v}</td>`).join("") + "</tr>"
+  ).join("") + "</tbody>";
+  return `<div class="table-wrap"><table>${head + body}</table></div>`;
+}
+
+async function runProps() {
+  const container = document.getElementById("propsContainer");
+  try {
+    const SQL = await initSqlJs({
+      locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}`,
+    });
+    const db = new SQL.Database();
+    const cols = Object.keys(DATA.halos[0]);
+    db.run(`CREATE TABLE worldlines (${cols.map(c => `"${c}"`).join(", ")});`);
+    const placeholders = cols.map(() => "?").join(", ");
+    const stmt = db.prepare(`INSERT INTO worldlines VALUES (${placeholders});`);
+    DATA.halos.forEach(h => stmt.run(cols.map(c => h[c])));
+    stmt.free();
+
+    container.innerHTML = "";
+    PROP_QUERIES.forEach(q => {
+      const res = db.exec(q.sql);
+      const block = document.createElement("div");
+      block.innerHTML = `<h3>${q.title}</h3><div class="sql">${q.sql}</div>${resultTable(res)}`;
+      container.appendChild(block);
+    });
+    db.close();
+  } catch (e) {
+    container.innerHTML = `<p class="muted">Could not load the SQLite engine (${e}). Check your connection and reload.</p>`;
+  }
+}
+
+// ---------- init ----------
+function buildSidebar() {
+  const box = document.getElementById("pathwayChecks");
+  box.innerHTML = "";
+  PATHWAYS.forEach(p => {
+    const id = "chk-" + p;
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="checkbox" id="${id}"> ${p}`;
+    box.appendChild(label);
+    label.querySelector("input").addEventListener("change", e => {
+      if (e.target.checked) selected.add(p); else selected.delete(p);
+      refresh();
+    });
+  });
+}
+
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    window.dispatchEvent(new Event("resize")); // force Plotly to size hidden plots
+  });
+});
+
+document.getElementById("resetBtn").addEventListener("click", () => {
+  selected = new Set();
+  PATHWAYS.forEach(p => { document.getElementById("chk-" + p).checked = false; });
+  refresh();
+});
+document.getElementById("csvBtn").addEventListener("click", () => downloadCSV(getFiltered()));
+
+async function main() {
+  DATA = await fetch("data.json").then(r => r.json());
+  PATHWAYS = DATA.pathway_cols;
+  selected = new Set(); // default: no filter -> show all halos
+  document.getElementById("haloCount").textContent = DATA.halos.length;
+  document.getElementById("m-halos").textContent = DATA.halos.length;
+  document.getElementById("propN").textContent = DATA.halos.length;
+  buildSidebar();
+  refresh();
+  runProps();
+}
+main();
+</script>
+</body>
+</html>

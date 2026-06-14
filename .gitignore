@@ -11,6 +11,9 @@ __pycache__/
 # OS
 .DS_Store
 
+# here.now local state / credentials cache
+.herenow/
+
 # Large data (uncomment if you want to exclude)
 # trees/
 # *.hdf5
