@@ -8,7 +8,7 @@ Validation pipeline for Rodgers' Quantum-Enhanced Throughput Model (Q-TPM). It t
 
 ## Environment & commands
 
-Uses a local `.venv` (Python 3.9), **not** conda. `requirements.txt` only covers the Streamlit app (`streamlit plotly pandas numpy`); the scrapers additionally need `requests`, `playwright` (+ `playwright install chromium`), and `h5py`.
+Uses a local `.venv` (Python 3.9), **not** conda. `requirements.txt` only covers the Streamlit app (`streamlit plotly pandas numpy`); the scrapers additionally need `requests` and `playwright` (+ `playwright install chromium`), and the CAMELS validator needs `h5py` + `scipy`.
 
 ```bash
 source .venv/bin/activate
@@ -42,7 +42,7 @@ Three pipelines feed/consume it:
 - **`PATHWAY_RULES` is duplicated** (identical lambdas) in `qtpm_validator_lite.py`, `app.py`, and `export_data.py`. They must stay in sync or the synthetic data, the Streamlit pathway flags, and the static `data.json` will silently disagree.
 - **`export_data.py` must mirror `app.py`'s generation exactly** (same seed, distributions, rounding). It regenerates the data independently rather than reading the DB, so any change to one generator must be mirrored in the other to keep the static site faithful.
 - **`global` is a column name.** It is a reserved word in some SQL engines — this is why the static site uses sql.js (SQLite, which tolerates it) rather than DuckDB. Quote it if you ever target another engine.
-- **Real-data validators emit placeholder constants.** In `qtpm_bolshoi.py` / `qtpm_camels.py`, most derived fields (`recent_growth`, `major_mergers`, `curvature`, etc.) are identical for every halo and are **not** real measurements — they're flagged as TODO. Don't interpret a real-data run as a validation result until proper column mapping exists.
+- **Real-data validators differ in maturity.** `qtpm_camels.py` does a *real* Subfind-catalog mapping: it reads `Group/`+`Subhalo/` HDF5 (units 1e10 M⊙/h, type 4 = stars), computes a KD-tree local density, and assigns pathway flags by **percentile** within the loaded population (synthetic thresholds don't transfer to physical units). Merger-history fields (`recent_growth`, `major_mergers`, `formation_snap`, `curvature`) and the pathways depending on them are written **NULL**, not faked — only `analytical` (full) and `global` (density branch, partial) are real from a single snapshot. By contrast `qtpm_bolshoi.py` still emits **placeholder constants** for derived fields (flagged TODO) — don't interpret its output as a real result.
 - **Python 3.9 venv:** `X | None` annotations require `from __future__ import annotations` (see `scrape_utils.py`).
 
 ## Deployment
