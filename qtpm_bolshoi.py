@@ -54,6 +54,12 @@ DENSITY_RADIUS_MPC_H = 5.0  # comoving Mpc/h sphere for the local-density estima
 PCTL_HIGH = 67
 PCTL_LOW = 33
 
+# A full Bolshoi hlist is millions of rows / several GB. Read it in chunks and
+# stop after MAX_HALOS so a real catalog can't exhaust memory. Set MAX_HALOS to
+# None to read the whole file. A <1 MB sample reads fully and is unaffected.
+CHUNK_ROWS = 100_000
+MAX_HALOS = 200_000
+
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -107,6 +113,31 @@ def _find_accretion_col(colmap):
     return None
 
 
+def _read_capped(path, usecols):
+    """Read an hlist in chunks, stopping after MAX_HALOS rows.
+
+    Bounds memory regardless of file size by only ever holding the selected
+    columns for up to MAX_HALOS rows. Returns a DataFrame whose columns are the
+    original integer indices (as with header=None + usecols).
+    """
+    reader = pd.read_csv(path, sep=r"\s+", comment="#", header=None,
+                         usecols=usecols, chunksize=CHUNK_ROWS)
+    parts, collected = [], 0
+    capped = False
+    for chunk in reader:
+        if MAX_HALOS is not None and collected + len(chunk) >= MAX_HALOS:
+            chunk = chunk.iloc[:MAX_HALOS - collected]
+            parts.append(chunk)
+            collected += len(chunk)
+            capped = True
+            break
+        parts.append(chunk)
+        collected += len(chunk)
+    if capped:
+        print(f"    (capped at MAX_HALOS={MAX_HALOS}; file has more rows)")
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+
 def local_number_density(pos, boxsize=None, radius=DENSITY_RADIUS_MPC_H):
     """Neighbours within `radius` (comoving Mpc/h) -> number density."""
     from scipy.spatial import cKDTree
@@ -146,12 +177,14 @@ def load_bolshoi_data():
         if acc_idx is not None:
             wanted["acc_rate"] = acc_idx
 
-        raw = pd.read_csv(path, sep=r"\s+", comment="#", header=None,
-                          usecols=list(wanted.values()))
+        raw = _read_capped(path, list(wanted.values()))
         # Map original column indices back to friendly names.
         idx_to_name = {v: k for k, v in wanted.items()}
         raw.columns = [idx_to_name[c] for c in raw.columns]
 
+        # NOTE: density is measured over the loaded (possibly capped) subset, so
+        # if MAX_HALOS truncates a full catalog it will be biased low. A small
+        # standalone sample is self-consistent.
         pos = raw[["x", "y", "z"]].to_numpy(dtype=float)
         density = local_number_density(pos)
 
