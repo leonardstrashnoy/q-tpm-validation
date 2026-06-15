@@ -1,0 +1,14 @@
+[
+  {
+    "id": "synthetic",
+    "name": "Synthetic (400 halos)",
+    "file": "data.json",
+    "note": "Deterministic synthetic halos with all six pathways and curvature."
+  },
+  {
+    "id": "camels",
+    "name": "CAMELS · IllustrisTNG LH_0 · z=0 (15,712 subhalos)",
+    "file": "data_camels.json",
+    "note": "Real Subfind catalog. Only analytical + global are derivable from a single snapshot; merger-history fields and their pathways are NULL."
+  }
+]

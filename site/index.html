@@ -83,6 +83,11 @@
 <body>
 <div class="layout">
   <aside class="sidebar">
+    <h3>Dataset</h3>
+    <select id="datasetSelect" style="width:100%;padding:7px;background:var(--bg3);color:var(--fg);border:1px solid var(--border);border-radius:8px;"></select>
+    <p class="muted" id="datasetNote" style="margin-top:6px;"></p>
+
+    <hr />
     <h3>Active Pathways</h3>
     <p class="muted" style="margin-top:-6px;">Check to keep only halos in <i>all</i> selected pathways. None checked = all halos.</p>
     <div class="checks" id="pathwayChecks"></div>
@@ -90,14 +95,10 @@
 
     <hr />
     <h3>📦 Datasets</h3>
-    <p class="muted"><b>Current Active</b><br />
-      <code>qtpm_validation.db</code><br />
-      Source: Synthetic (realistic distributions)<br />
+    <p class="muted"><b>Loaded</b><br />
+      <span id="activeName">—</span><br />
       Halos: <b id="haloCount">—</b></p>
-    <p class="muted"><b>Future / Potential</b><br />
-      <code>qtpm_tng_real.db</code> — IllustrisTNG (TNG100-1)<br />
-      <code>qtpm_cosmosim.db</code> — CosmoSim / Uchuu<br />
-      Bolshoi / MultiDark — planned</p>
+    <p class="muted" id="availabilityNote"></p>
 
     <hr />
     <details>
@@ -134,7 +135,7 @@
       </div>
       <h2>Pathway Activation</h2>
       <div class="plot" id="plot-activation"></div>
-      <h2>Curvature vs Density</h2>
+      <h2 id="scatter-title">Curvature vs Density</h2>
       <div class="plot" id="plot-scatter"></div>
       <button class="action" id="csvBtn">📥 Download filtered data (CSV)</button>
       <div class="table-wrap"><table id="overviewTable"></table></div>
@@ -166,8 +167,19 @@ const DARK = {
 const CONF = { displayModeBar: false, responsive: true };
 
 let DATA = null;          // full payload
-let PATHWAYS = [];        // pathway column names
+let PATHWAYS = [];        // available pathway column names (non-null in this dataset)
 let selected = new Set(); // active pathway filters
+let AVAIL = new Set();    // columns that have at least one non-null value
+
+// A column is "available" if any row has a non-null value for it.
+function has(col) { return AVAIL.has(col); }
+function computeAvailability() {
+  AVAIL = new Set();
+  const sample = DATA.halos;
+  Object.keys(sample[0] || {}).forEach(col => {
+    if (sample.some(h => h[col] !== null && h[col] !== undefined)) AVAIL.add(col);
+  });
+}
 
 // ---------- helpers ----------
 const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
@@ -213,12 +225,16 @@ function clearNote(divId) {
 }
 
 function renderMetrics(rows) {
-  const dash = "—";
+  const NA = "N/A";
   document.getElementById("m-halos").textContent = rows.length;
-  document.getElementById("m-curv").textContent = rows.length ? round(mean(rows.map(r => r.curvature)), 4) : dash;
-  document.getElementById("m-rev").textContent = rows.length ? round(mean(rows.map(r => r.revisionist)) * 100, 1) + "%" : dash;
+  document.getElementById("m-curv").textContent =
+    !has("curvature") ? NA : rows.length ? round(mean(rows.map(r => r.curvature)), 4) : "—";
+  document.getElementById("m-rev").textContent =
+    !has("revisionist") ? NA : rows.length ? round(mean(rows.map(r => r.revisionist)) * 100, 1) + "%" : "—";
+  const haveIntf = has("expedient") && has("global");
   const intf = mean(rows.map(r => (r.expedient + r.global) > 1 ? 1 : 0)) * 100;
-  document.getElementById("m-intf").textContent = rows.length ? round(intf, 1) + "%" : dash;
+  document.getElementById("m-intf").textContent =
+    !haveIntf ? NA : rows.length ? round(intf, 1) + "%" : "—";
 }
 
 function renderActivation(rows) {
@@ -233,28 +249,45 @@ function renderActivation(rows) {
 function renderScatter(rows) {
   if (!rows.length) return emptyNote("plot-scatter");
   clearNote("plot-scatter");
+  // curvature is a merger-tree quantity; fall back to star_fraction when absent.
+  const yCol = has("curvature") ? "curvature" : "star_fraction";
+  const colorCol = has("revisionist") ? "revisionist" : (PATHWAYS[0] || null);
+  document.getElementById("scatter-title").textContent =
+    (yCol === "curvature" ? "Curvature" : "Star fraction") + " vs Density";
+  const marker = { size: 7, opacity: 0.8 };
+  if (colorCol) Object.assign(marker, {
+    color: rows.map(r => r[colorCol]), colorscale: "Viridis",
+    showscale: true, colorbar: { title: colorCol },
+  });
   Plotly.react("plot-scatter", [{
     type: "scattergl", mode: "markers",
-    x: rows.map(r => r.local_density), y: rows.map(r => r.curvature),
-    marker: {
-      color: rows.map(r => r.revisionist), colorscale: "Viridis",
-      showscale: true, colorbar: { title: "revisionist" }, size: 7, opacity: 0.8,
-    },
-    text: rows.map(r => "halo " + r.halo_id),
-  }], { ...DARK, height: 420, xaxis: { title: "local_density" }, yaxis: { title: "curvature" } }, CONF);
+    x: rows.map(r => r.local_density), y: rows.map(r => r[yCol]),
+    marker, text: rows.map(r => "halo " + r.halo_id),
+  }], { ...DARK, height: 420, xaxis: { title: "local_density" }, yaxis: { title: yCol } }, CONF);
 }
 
+const TABLE_CAP = 1000;
 function renderTable(rows) {
-  const cols = ["halo_id", "mass", "curvature", ...PATHWAYS];
+  const extra = ["curvature", "stellar_mass", "star_fraction", "local_density"].filter(has);
+  const cols = ["halo_id", "mass", ...extra, ...PATHWAYS];
+  const shown = rows.slice(0, TABLE_CAP);
   const head = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
-  const body = "<tbody>" + rows.map(r =>
-    "<tr>" + cols.map(c => `<td>${r[c]}</td>`).join("") + "</tr>"
+  const body = "<tbody>" + shown.map(r =>
+    "<tr>" + cols.map(c => `<td>${r[c] === null || r[c] === undefined ? "—" : r[c]}</td>`).join("") + "</tr>"
   ).join("") + "</tbody>";
-  document.getElementById("overviewTable").innerHTML = head + body;
+  const cap = rows.length > TABLE_CAP
+    ? `<caption class="muted" style="caption-side:top;text-align:left;padding:6px;">Showing first ${TABLE_CAP} of ${rows.length} rows.</caption>` : "";
+  document.getElementById("overviewTable").innerHTML = cap + head + body;
 }
 
 function renderCorr(rows) {
   if (!rows.length) return emptyNote("plot-corr");
+  if (PATHWAYS.length < 2) {
+    Plotly.purge("plot-corr");
+    document.getElementById("plot-corr").innerHTML =
+      `<p class="muted" style="padding:28px;text-align:center;">Need at least two available pathways to correlate — this dataset has ${PATHWAYS.length} (others are NULL without merger trees).</p>`;
+    return;
+  }
   clearNote("plot-corr");
   const cols = PATHWAYS;
   const series = cols.map(c => rows.map(r => r[c]));
@@ -268,6 +301,10 @@ function renderCorr(rows) {
 function renderBoxes(rows) {
   const container = document.getElementById("boxPlots");
   container.innerHTML = "";
+  if (!has("curvature")) {
+    container.innerHTML = "<p class='muted'>Box plots show per-halo curvature, a merger-tree quantity not available for this dataset.</p>";
+    return;
+  }
   if (!rows.length) { container.innerHTML = "<p class='muted'>No halos match the current filter.</p>"; return; }
   const qlab = quartileLabels(rows.map(r => r.mass));
   const order = ["Q1", "Q2", "Q3", "Q4"];
@@ -372,7 +409,9 @@ async function runProps() {
     db.run(`CREATE TABLE worldlines (${cols.map(c => `"${c}"`).join(", ")});`);
     const placeholders = cols.map(() => "?").join(", ");
     const stmt = db.prepare(`INSERT INTO worldlines VALUES (${placeholders});`);
+    db.run("BEGIN;");
     DATA.halos.forEach(h => stmt.run(cols.map(c => h[c])));
+    db.run("COMMIT;");
     stmt.free();
 
     container.innerHTML = "";
@@ -421,16 +460,40 @@ document.getElementById("resetBtn").addEventListener("click", () => {
 });
 document.getElementById("csvBtn").addEventListener("click", () => downloadCSV(getFiltered()));
 
-async function main() {
-  DATA = await fetch("data.json").then(r => r.json());
-  PATHWAYS = DATA.pathway_cols;
+async function loadDataset(meta) {
+  document.getElementById("propsContainer").innerHTML =
+    '<p class="muted">Loading…</p>';
+  DATA = await fetch(meta.file).then(r => r.json());
+  computeAvailability();
+  // Only pathways that actually have data in this dataset are interactive.
+  PATHWAYS = DATA.pathway_cols.filter(has);
   selected = new Set(); // default: no filter -> show all halos
+
+  document.getElementById("activeName").textContent = meta.name;
   document.getElementById("haloCount").textContent = DATA.halos.length;
-  document.getElementById("m-halos").textContent = DATA.halos.length;
   document.getElementById("propN").textContent = DATA.halos.length;
+  const missing = DATA.pathway_cols.filter(p => !has(p));
+  document.getElementById("availabilityNote").innerHTML = missing.length
+    ? `NULL here (need merger trees): <code>${missing.join("</code> <code>")}</code>`
+    : "All six pathways available.";
+  document.getElementById("datasetNote").textContent = meta.note || "";
+
   buildSidebar();
   refresh();
   runProps();
+}
+
+async function main() {
+  const datasets = await fetch("datasets.json").then(r => r.json());
+  const sel = document.getElementById("datasetSelect");
+  datasets.forEach((d, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = d.name;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener("change", () => loadDataset(datasets[Number(sel.value)]));
+  await loadDataset(datasets[0]);
 }
 main();
 </script>
