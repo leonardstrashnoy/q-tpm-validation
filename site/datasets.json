@@ -10,5 +10,11 @@
     "name": "CAMELS · IllustrisTNG LH_0 · z=0 (15,712 subhalos)",
     "file": "data_camels.json",
     "note": "Real Subfind catalog. Only analytical + global are derivable from a single snapshot; merger-history fields and their pathways are NULL."
+  },
+  {
+    "id": "bolshoi",
+    "name": "Bolshoi-P · Rockstar hlist · z≈0 (1,328-halo sample)",
+    "file": "data_bolshoi.json",
+    "note": "Real consistent-trees hlist (<1 MB slice). DM-only, so no stellar mass; but accretion + last-major-merger timing light up value_driven, expedient and global. analytical/ruling_guide/revisionist are NULL."
   }
 ]

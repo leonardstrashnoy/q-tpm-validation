@@ -113,6 +113,25 @@ def _find_accretion_col(colmap):
     return None
 
 
+def parse_hlist_hubble(path, default=BOLSHOI_H):
+    """Read the Hubble parameter h0 from the hlist comment header.
+
+    consistent-trees hlists carry a line like
+    ``#Omega_M = 0.307115; Omega_L = 0.692885; h0 = 0.680000``. Using the
+    catalog's own h keeps the Msun/h -> Msun conversion correct across
+    Bolshoi (0.70) vs BolshoiP (0.68) without hardcoding.
+    """
+    with open(path) as f:
+        for _ in range(80):  # cosmology line is within the comment block
+            line = f.readline()
+            if not line or not line.startswith("#"):
+                break
+            m = re.search(r"h0\s*=\s*([0-9.]+)", line)
+            if m:
+                return float(m.group(1))
+    return default
+
+
 def _read_capped(path, usecols):
     """Read an hlist in chunks, stopping after MAX_HALOS rows.
 
@@ -182,6 +201,8 @@ def load_bolshoi_data():
         idx_to_name = {v: k for k, v in wanted.items()}
         raw.columns = [idx_to_name[c] for c in raw.columns]
 
+        h = parse_hlist_hubble(path)
+
         # NOTE: density is measured over the loaded (possibly capped) subset, so
         # if MAX_HALOS truncates a full catalog it will be biased low. A small
         # standalone sample is self-consistent.
@@ -190,7 +211,7 @@ def load_bolshoi_data():
 
         frame = pd.DataFrame({
             "halo_id": raw["id"].astype("int64") if "id" in raw else np.arange(len(raw)),
-            "mass": raw["mvir"].to_numpy(dtype=float) / BOLSHOI_H,  # Msun/h -> Msun
+            "mass": raw["mvir"].to_numpy(dtype=float) / h,  # Msun/h -> Msun
             "local_density": density,
         })
         if "acc_rate" in raw:

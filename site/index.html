@@ -249,11 +249,12 @@ function renderActivation(rows) {
 function renderScatter(rows) {
   if (!rows.length) return emptyNote("plot-scatter");
   clearNote("plot-scatter");
-  // curvature is a merger-tree quantity; fall back to star_fraction when absent.
-  const yCol = has("curvature") ? "curvature" : "star_fraction";
+  // Pick the first y-axis the dataset actually has (curvature is a merger-tree
+  // quantity; DM-only catalogs lack star_fraction too).
+  const yCol = ["curvature", "star_fraction", "recent_growth", "mass"].find(has) || "mass";
   const colorCol = has("revisionist") ? "revisionist" : (PATHWAYS[0] || null);
-  document.getElementById("scatter-title").textContent =
-    (yCol === "curvature" ? "Curvature" : "Star fraction") + " vs Density";
+  const pretty = s => s.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+  document.getElementById("scatter-title").textContent = pretty(yCol) + " vs Density";
   const marker = { size: 7, opacity: 0.8 };
   if (colorCol) Object.assign(marker, {
     color: rows.map(r => r[colorCol]), colorscale: "Viridis",
@@ -268,7 +269,7 @@ function renderScatter(rows) {
 
 const TABLE_CAP = 1000;
 function renderTable(rows) {
-  const extra = ["curvature", "stellar_mass", "star_fraction", "local_density"].filter(has);
+  const extra = ["curvature", "stellar_mass", "star_fraction", "recent_growth", "local_density"].filter(has);
   const cols = ["halo_id", "mass", ...extra, ...PATHWAYS];
   const shown = rows.slice(0, TABLE_CAP);
   const head = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";

@@ -12,6 +12,7 @@ Usage:
 """
 
 import json
+import math
 import sqlite3
 import sys
 from pathlib import Path
@@ -21,13 +22,16 @@ PATHWAY_COLS = ["expedient", "ruling_guide", "analytical",
 
 # Columns the dashboard never needs; dropped to keep the payload small.
 DROP_COLS = {"created_at", "simulation", "snapshot"}
-# Floats rounded to this many significant places to shrink the JSON.
-ROUND = 6
+# Significant figures kept per float. Using sig-figs (not decimal places) so
+# tiny quantities like recent_growth (~1e-10 specific accretion) survive
+# instead of being rounded to 0.
+SIG_FIGS = 6
 
 
 def _coerce(value):
-    if isinstance(value, float):
-        return round(value, ROUND)
+    if isinstance(value, float) and math.isfinite(value) and value != 0.0:
+        digits = SIG_FIGS - 1 - math.floor(math.log10(abs(value)))
+        return round(value, digits)
     return value
 
 
