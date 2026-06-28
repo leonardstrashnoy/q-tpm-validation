@@ -1,0 +1,21 @@
+name: Deploy static site to here.now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish to here.now
+        env:
+          HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+        run: |
+          bash .github/scripts/publish-herenow.sh site \
+            --slug queued-voyage-cbzb \
+            --client github-actions
