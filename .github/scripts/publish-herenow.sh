@@ -96,6 +96,10 @@ if [[ -z "$API_KEY" && -f "$CREDENTIALS_FILE" ]]; then
   [[ -n "$API_KEY" ]] && API_KEY_SOURCE="credentials"
 fi
 
+# Strip any whitespace/newlines regardless of source (env/flag keys may carry
+# a trailing newline, e.g. from a CI secret, which breaks the auth header).
+API_KEY="$(printf '%s' "$API_KEY" | tr -d '[:space:]')"
+
 BASE_URL="${BASE_URL%/}"
 STATE_DIR=".herenow"
 STATE_FILE="$STATE_DIR/state.json"
